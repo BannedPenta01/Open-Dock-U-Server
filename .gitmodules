@@ -86,8 +86,34 @@ url = https://github.com/PretendoNetwork/minecraft-wiiu
 branch = main
 ignore = dirty
 
+[submodule "repos/mario-kart-7"]
+	path = repos/mario-kart-7
+	url = https://github.com/PretendoNetwork/mario-kart-7.git
+	branch = master
+	ignore = dirty
+
 [submodule "repos/pikmin-3"]
-path = repos/pikmin-3
-url = https://github.com/PretendoNetwork/pikmin-3
-branch = master
-ignore = dirty
+	path = repos/pikmin-3
+	url = https://github.com/PretendoNetwork/pikmin-3
+	branch = master
+	ignore = dirty
+[submodule "repos/mario-kart-8"]
+	path = repos/mario-kart-8
+	url = https://github.com/PretendoNetwork/mario-kart-8
+	branch = master
+	ignore = dirty
+[submodule "repos/super-smash-bros-wiiu"]
+	path = repos/super-smash-bros-wiiu
+	url = https://github.com/PretendoNetwork/super-smash-bros-wiiu
+	branch = master
+	ignore = dirty
+[submodule "repos/pokken-tournament"]
+	path = repos/pokken-tournament
+	url = https://github.com/PretendoNetwork/pokken-tournament
+	branch = master
+	ignore = dirty
+[submodule "repos/super-mario-3d-world-secure"]
+	path = repos/super-mario-3d-world-secure
+	url = https://github.com/PretendoNetwork/super-mario-3d-world-secure
+	branch = master
+	ignore = dirty

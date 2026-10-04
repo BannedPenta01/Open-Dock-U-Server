@@ -6,10 +6,14 @@ services:
     restart: always
     ports:
       # Proxy server
-      - 8080:8080
+      - 8070:8080
       # Mitmweb interface
       - 127.0.0.1:8081:8081
     volumes:
+      - type: bind
+        source: ./repos/mitmproxy-pretendo/pretendo_addon.py
+        target: /home/mitmproxy/pretendo_addon.py
+        read_only: true
       - type: volume
         source: mitmproxy-pretendo-data
         target: /home/mitmproxy/.mitmproxy
@@ -95,6 +99,12 @@ services:
     dns: 172.20.0.200
 
   mongodb:
+    healthcheck:
+      test: ["CMD-SHELL", "(mongosh --quiet --eval '(function() { var cfg = {_id: \"rs\", members: [{_id: 0, host: \"mongodb:27017\"}]}; function isPrimary() { try { var hello = (typeof db.hello === \"function\") ? db.hello() : db.isMaster(); if (hello.isWritablePrimary || hello.ismaster) { return true; } } catch (e) {} try { var status = rs.status(); return !!(status.ok && status.myState === 1); } catch (e) {} return false; } if (isPrimary()) { print(true); return; } try { rs.status(); } catch (e) { var msg = String((e && (e.codeName || e.message)) || e); if ( msg.indexOf(\"NotYetInitialized\") >= 0 || msg.indexOf(\"no replset config\") >= 0 || msg.indexOf(\"not yet initialized\") >= 0 ) { try { rs.initiate(cfg); } catch (initError) {} } } for (var i = 0; i < 15; i++) { if (isPrimary()) { print(true); return; } sleep(1000); } print(false); })();' || mongo --quiet --eval '(function() { var cfg = {_id: \"rs\", members: [{_id: 0, host: \"mongodb:27017\"}]}; function isPrimary() { try { var hello = (typeof db.hello === \"function\") ? db.hello() : db.isMaster(); if (hello.isWritablePrimary || hello.ismaster) { return true; } } catch (e) {} try { var status = rs.status(); return !!(status.ok && status.myState === 1); } catch (e) {} return false; } if (isPrimary()) { print(true); return; } try { rs.status(); } catch (e) { var msg = String((e && (e.codeName || e.message)) || e); if ( msg.indexOf(\"NotYetInitialized\") >= 0 || msg.indexOf(\"no replset config\") >= 0 || msg.indexOf(\"not yet initialized\") >= 0 ) { try { rs.initiate(cfg); } catch (initError) {} } } for (var i = 0; i < 15; i++) { if (isPrimary()) { print(true); return; } sleep(1000); } print(false); })();') | grep -q true"]
+      interval: 30s
+      timeout: 10s
+      retries: 30
+      start_period: 40s
     # TODO: Set up authentication
     image: mongo:latest
     depends_on:
@@ -119,8 +129,10 @@ services:
   mongo-express:
     image: mongo-express:latest
     depends_on:
-      - coredns-internal
-      - mongodb
+      coredns-internal:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
     restart: always
     ports:
       # Web interface
@@ -200,7 +212,12 @@ services:
       - ./environment/mailpit.env
 
   postgres:
-    image: postgres:alpine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres_pretendo -d template1 && psql -v ON_ERROR_STOP=1 -U postgres_pretendo -d template1 -t -c \"SELECT 1 FROM pg_database WHERE datname='mario_kart_8'\" | grep -q 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 24
+    image: postgres:17-alpine
     depends_on:
       - coredns-internal
     restart: always
@@ -208,6 +225,10 @@ services:
       # For connecting with pgAdmin
       - 127.0.0.1:5432:5432
     volumes:
+      - type: bind
+        source: ./scripts/run-in-container/postgres-init.sh
+        target: /docker-entrypoint-initdb.d/postgres-init.sh
+        read_only: true
       - type: volume
         source: postgres-database
         target: /var/lib/postgresql/data
@@ -241,12 +262,18 @@ services:
   account:
     build: ./repos/account
     depends_on:
-      - coredns-internal
-      - nginx
-      - mongodb
-      - minio
-      - redis
-      - mailpit
+      coredns-internal:
+        condition: service_started
+      nginx:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+      mailpit:
+        condition: service_started
     restart: always
     ports:
       # Node.js debugger
@@ -262,8 +289,10 @@ services:
   website:
     build: ./repos/website
     depends_on:
-      - account
-      - mongodb
+      account:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
     restart: always
     ports:
       # Node.js debugger
@@ -281,16 +310,18 @@ services:
   friends:
     build: ./repos/friends
     depends_on:
-      - account
-      - postgres
+      account:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     restart: always
     ports:
       # Go delve debugger
       - 127.0.0.1:2345:2345
       # Authentication server
-      - 6000:6000/udp
+      - 60000:60000/udp
       # Secure server
-      - 6001:6001/udp
+      - 60001:60001/udp
     networks:
       internal:
     dns: 172.20.0.200
@@ -301,9 +332,12 @@ services:
   miiverse-api:
     build: ./repos/miiverse-api
     depends_on:
-      - account
-      - mongodb
-      - friends
+      account:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+      friends:
+        condition: service_started
     restart: always
     ports:
       # Node.js debugger
@@ -324,10 +358,14 @@ services:
   juxtaposition-ui:
     build: ./repos/juxtaposition-ui
     depends_on:
-      - account
-      - mongodb
-      - redis
-      - friends
+      account:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      friends:
+        condition: service_started
     restart: always
     ports:
       # Node.js debugger
@@ -348,8 +386,10 @@ services:
   boss:
     build: ./repos/BOSS
     depends_on:
-      - account
-      - mongodb
+      account:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
     restart: always
     ports:
       # Node.js debugger
@@ -377,7 +417,7 @@ services:
       # Go delve debugger
       - 127.0.0.1:2346:2345
       # Authentication server
-      - 6002:6002/udp
+      - 60020:60020/udp
     networks:
       internal:
     dns: 172.20.0.200
@@ -396,7 +436,7 @@ services:
       # Go delve debugger
       - 127.0.0.1:2347:2345
       # Secure server
-      - 6003:6003/udp
+      - 60021:60021/udp
     networks:
       internal:
     dns: 172.20.0.200
@@ -407,17 +447,20 @@ services:
   super-mario-maker:
     build: ./repos/super-mario-maker
     depends_on:
-      - account
-      - minio
-      - postgres
+      account:
+        condition: service_started
+      minio:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     restart: always
     ports:
       # Go delve debugger
       - 127.0.0.1:2348:2345
       # Authentication server
-      - 6004:6004/udp
+      - 60040:60040/udp
       # Secure server
-      - 6005:6005/udp
+      - 60041:60041/udp
     networks:
       internal:
     dns: 172.20.0.200
@@ -428,16 +471,18 @@ services:
   splatoon:
     build: ./repos/splatoon
     depends_on:
-      - account
-      - mongodb
+      account:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
     restart: unless-stopped
     ports:
       # Go delve debugger
       - 127.0.0.1:2349:2345
       # Authentication server
-      - 6006:6006/udp
+      - 60060:60060/udp
       # Secure server
-      - 6007:6007/udp
+      - 60061:60061/udp
     networks:
       internal:
     dns: 172.20.0.200
@@ -454,9 +499,9 @@ services:
       # Go delve debugger
       - 127.0.0.1:2350:2345
       # Authentication server
-      - 6008:6008/udp
+      - 60080:60080/udp
       # Secure server
-      - 6009:6009/udp
+      - 60090:60090/udp
     networks:
       internal:
     dns: 172.20.0.200
@@ -467,22 +512,118 @@ services:
   pikmin-3:
     build: ./repos/pikmin-3
     depends_on:
-      - account
-      - postgres
+      account:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     ports:
       # Go delve debugger
       - 127.0.0.1:2351:2349
       # Authentication server
-      - 6010:6010/udp
+      - 60100:60100/udp
       # Secure server
-      - 6011:6011/udp
+      - 60101:60101/udp
     networks:
       internal:
     dns: 172.20.0.200
     env_file:
       - ./environment/pikmin-3.env
       - ./environment/pikmin-3.local.env
+
+  # INJECTED SERVICES
+  super-smash-bros-wiiu:
+    build: ./repos/super-smash-bros-wiiu
+    depends_on:
+      account:
+        condition: service_started
+      friends:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+    ports:
+      - 60120:60120/udp
+      - 60130:60130/udp
+    networks:
+      internal:
+    dns: 172.20.0.200
+    env_file:
+      - ./environment/super-smash-bros-wiiu.env
+      - ./environment/super-smash-bros-wiiu.local.env
+  pokken-tournament:
+    build: ./repos/pokken-tournament
+    depends_on:
+      - account
+      - friends
+      - postgres
+    restart: unless-stopped
+    ports:
+      - 60008:60008/udp
+      - 60009:60009/udp
+    networks:
+      internal:
+    dns: 172.20.0.200
+    env_file:
+      - ./environment/pokken-tournament.env
+      - ./environment/pokken-tournament.local.env
+  mario-kart-8:
+    build: ./repos/mario-kart-8
+    depends_on:
+      account:
+        condition: service_started
+      friends:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - 60140:60140/udp
+      - 60150:60150/udp
+    networks:
+      internal:
+    dns: 172.20.0.200
+    env_file:
+      - ./environment/mario-kart-8.env
+      - ./environment/mario-kart-8.local.env
+
+  # mario-kart-7 DISABLED:
+  #   build: ./repos/mario-kart-7
+  #   depends_on:
+  #     account:
+  #       condition: service_started
+  #     postgres:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+  #   ports:
+  #     - 60210:60210/udp
+  #     - 60211:60211/udp
+  #   networks:
+  #     internal:
+  #   dns: 172.20.0.200
+  #   env_file:
+  #     - ./environment/mario-kart-7.env
+  #     - ./environment/mario-kart-7.local.env
+
+  super-mario-3d-world-secure:
+    build: ./repos/super-mario-3d-world-secure
+    depends_on:
+      account:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - 60300:60200/udp
+      - 60301:60201/udp
+    networks:
+      internal:
+    dns: 172.20.0.200
+    env_file:
+      - ./environment/super-mario-3d-world-secure.env
+      - ./environment/super-mario-3d-world-secure.local.env
 
 volumes:
   mitmproxy-pretendo-data:
